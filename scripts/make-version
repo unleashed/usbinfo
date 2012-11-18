@@ -1,0 +1,101 @@
+#!/bin/sh
+#
+# Crea version_data.h con la version git o la que se haya especificado como param.
+#
+# make-version [version]
+
+MYDIR=$(dirname $0)
+ROOTDIR=$MYDIR/..
+INCLUDE_DIR=${ROOTDIR}/src
+VERSION_DATA=${INCLUDE_DIR}/version_data.h
+GVF=$ROOTDIR/GIT-VERSION-FILE
+
+# if no git support or not on a checked in git tree (ie. not on an untracked directory)
+# we won't touch the version file. This avoids extracting a tarball on a git repo and
+# overwriting the version file with wrong data.
+git ls-files --error-unmatch ${ROOTDIR} > /dev/null 2>&1 || exit 0
+
+COMMIT=$(git rev-parse HEAD 2> /dev/null) || COMMIT="unknown commit-id"
+CODENAME=$(git tag -l -n99 `git describe --always` 2> /dev/null | grep "^\s*Codename\: .*$" | head -n 1 | sed -e 's/^\s*Codename: \(.*\)$/\1/') || CODENAME=""
+
+if test -z $1; then
+	test -r $GVF && rm -f $GVF
+	$MYDIR/git-version-gen > /dev/null
+	SOFTVERSION=$(cat $ROOTDIR/GIT-VERSION-FILE | cut -d ' ' -f 3) || SOFTVERSION="unknown"
+else
+	SOFTVERSION=$1
+fi
+
+MAJOR=$(echo ${SOFTVERSION} | cut -d '.' -f 1)
+MINOR=$(echo ${SOFTVERSION} | cut -d '.' -f 2)
+MICRO=$(echo ${SOFTVERSION} | cut -d '.' -f 3 | sed -e 's/-.*$//')
+PREVIEWBASE=$(echo ${SOFTVERSION} | cut -d '.' -f 3 | grep -o "\-.*$" | sed -e 's/-//')
+test "x${PREVIEWBASE}" = "x" && PREVIEWBASE="final0"
+PREVIEWTYPE=$(echo ${PREVIEWBASE} | sed -e 's/[[:digit:]]//g')
+PREVIEWLEVEL=$(echo ${PREVIEWBASE} | sed -e 's/[^[:digit:]]//g')
+PATCHLEVEL=$(echo ${SOFTVERSION} | cut -d '.' -f 4 | grep -v ^g | grep -v dirty)
+EXTRA=$(echo ${SOFTVERSION} | grep -o "\.g.*" | cut -d '.' -f 2 | cut -d 'g' -f 2)
+if echo ${SOFTVERSION} | grep dirty; then
+	DIRTY=1
+else
+	DIRTY=0
+fi
+
+test "x${MAJOR}" = "x" && MAJOR=0
+test "x${MINOR}" = "x" && MINOR=0
+test "x${MICRO}" = "x" && MICRO=0
+test "x${PATCHLEVEL}" = "x" && PATCHLEVEL=0
+test "x${EXTRA}" = "x" && EXTRA=
+
+case ${PREVIEWTYPE} in
+	rc)
+		PREVIEWTYPE="VERSION_TYPE_RC"
+		;;
+	pre)
+		PREVIEWTYPE="VERSION_TYPE_PRE"
+		;;
+	beta)
+		PREVIEWTYPE="VERSION_TYPE_BETA"
+		;;
+	alpha)
+		PREVIEWTYPE="VERSION_TYPE_ALPHA"
+		;;
+	*)
+		PREVIEWTYPE="VERSION_TYPE_FINAL"
+		;;
+esac
+test "x${PREVIEWLEVEL}" = "x" && PREVIEWLEVEL=0
+
+/bin/echo -e "/* NO EDITAR, autogenerado por make-version */\n#ifndef __VERSION_DATA_H__\n#define __VERSION_DATA_H__\n\n#define VERSION_STRING \"$SOFTVERSION\"\n#define PACKAGE_DATE \"`date +%Y%m%d`\"\n#define PACKAGED_BY \"`whoami`@`hostname -f`\"\n#define VERSION_COMMIT \"$COMMIT\"" > ${VERSION_DATA}
+test -n "${CODENAME}" && {
+	echo Codename: ${CODENAME}
+	/bin/echo -e "#define VERSION_CODENAME \"${CODENAME}\"" >> ${VERSION_DATA}
+}
+
+echo Major: ${MAJOR}
+/bin/echo -e "#define VERSION_MAJOR ${MAJOR}" >> ${VERSION_DATA}
+
+echo Minor: ${MINOR}
+/bin/echo -e "#define VERSION_MINOR ${MINOR}" >> ${VERSION_DATA}
+
+echo Micro: ${MICRO}
+/bin/echo -e "#define VERSION_MICRO ${MICRO}" >> ${VERSION_DATA}
+
+echo Patchlevel: ${PATCHLEVEL}
+/bin/echo -e "#define VERSION_PATCHLEVEL ${PATCHLEVEL}" >> ${VERSION_DATA}
+
+echo Extra: ${EXTRA}
+/bin/echo -e "#define VERSION_EXTRA \"${EXTRA}\"" >> ${VERSION_DATA}
+
+echo Dirty: ${DIRTY}
+/bin/echo -e "#define VERSION_DIRTY ${DIRTY}" >> ${VERSION_DATA}
+
+echo Version type: ${PREVIEWTYPE}
+/bin/echo -e "#define VERSION_TYPE ${PREVIEWTYPE}" >> ${VERSION_DATA}
+
+echo Version type level: ${PREVIEWLEVEL}
+/bin/echo -e "#define VERSION_TYPE_LEVEL ${PREVIEWLEVEL}" >> ${VERSION_DATA}
+
+/bin/echo -e "\n#endif" >> ${VERSION_DATA}
+
+exit 0

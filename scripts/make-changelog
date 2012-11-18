@@ -1,0 +1,32 @@
+#!/bin/sh
+
+set -e
+
+find_release_tag()
+{
+	# this keeps searching the tag list for the previous v[0-9]*\.[0-9]*\.[0-9]* tag
+	local CANDIDATE=${1-HEAD}
+	while true; do
+		CANDIDATE=$(git describe --abbrev=0 --match "v*" ${CANDIDATE})
+		if echo "${CANDIDATE}" | grep -P "^v[0-9]*\.[0-9]*\.[0-9]*$" > /dev/null 2>&1; then
+			break
+		fi
+		CANDIDATE="${CANDIDATE}^"
+	done
+	echo -n "$CANDIDATE"
+}
+
+
+HEAD=${1:-HEAD}
+LAST_VER=$(find_release_tag HEAD^)
+CURRENT_VER=$(git describe ${HEAD})
+echo Generating changelog from ${LAST_VER} to ${CURRENT_VER} ...
+CHANGELOG="$(dirname $0)/../ChangeLog"
+CHANGELOGTMP="${CHANGELOG}.tmp"
+/bin/echo -e "* Changes from ${LAST_VER} to ${CURRENT_VER}:\n" > ${CHANGELOGTMP}
+git shortlog --no-merges ${LAST_VER}..${CURRENT_VER} | sed -e 's/^\(.*\)$/\t\1/g' >> ${CHANGELOGTMP}
+test -f ${CHANGELOG} && {
+	/bin/echo -n -e "\n" >> ${CHANGELOGTMP}
+	cat ${CHANGELOG} >> ${CHANGELOGTMP}
+}
+mv -f ${CHANGELOGTMP} ${CHANGELOG}

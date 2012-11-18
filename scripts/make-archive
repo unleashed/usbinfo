@@ -1,0 +1,78 @@
+#!/bin/bash -e
+
+tarball_create_start()
+{
+	mkdir -p ${MYTARBALLNAME}
+	git archive --format=tar --prefix=${MYTARBALLNAME}/ HEAD | tar xpf - -C .
+}
+
+tarball_create_end()
+{
+	test -d ${MYTARBALLNAME} || return 1
+	tar --owner root --group root -cf ${MYDIR}/${MYTARBALLNAME}.tar ${MYTARBALLNAME}
+	rm -rf ${MYTARBALLNAME}
+}
+
+tarball_patch()
+{
+	# patches autoconf's idea of package version
+	cp ${ROOTDIR}/src/version_data.h ${MYTARBALLNAME}/src &&
+	cp ${ROOTDIR}/GIT-VERSION-FILE ${MYTARBALLNAME} &&
+	cat ${ROOTDIR}/configure.ac | sed -e "s/^VERSION=.*$/VERSION=${MYVERSION}/g" | sed -e "s/\(AC_INIT([^,]*,\s*\[\).*\(\]\s*,.*$\)/\1${MYVERSION}\2/" > ${MYTARBALLNAME}/configure.ac &&
+	echo File patching done. Entering ${MYTARBALLNAME}
+	pushd ${MYTARBALLNAME} > /dev/null 2>&1
+	echo Executing autogen.sh...
+	./autogen.sh &&
+	echo autogen.sh OK
+	popd > /dev/null 2>&1
+}
+
+tarball_create()
+{
+	tarball_create_start
+	tarball_patch
+	tarball_create_end
+}
+
+MYDIR=$(dirname $0)
+MYPRODUCT=$(echo ${PRODUCT} | tr -d _ | tr '[:upper:]' '[:lower:]')
+
+# if we have GNU readlink, there's a nice correct shortcut to get absoulte ROOTDIR
+if readlink --version | head -n 1 | grep GNU > /dev/null 2>&1; then
+	ROOTDIR=$(readlink -m ${MYDIR}/..)
+	MYNAME=$(basename ${ROOTDIR})
+else
+	ROOTDIR=${ROOTDIR:-${MYDIR}/..}
+	MYNAME=$(basename ${ROOTDIR} 2> /dev/null || echo ${MYPRODUCT:-backupd}_UNKNOWN)
+fi
+
+case "$1x" in
+	"xx")
+	COMPR_BIN="xz -9"
+	COMPR_EXT=xz
+	;;
+	"bx")
+	COMPR_BIN="bzip2 -z9"
+	COMPR_EXT=bz2
+	;;
+	"zx"|*)
+	COMPR_BIN="gzip -9"
+	COMPR_EXT=gz
+	;;
+esac
+
+pushd ${ROOTDIR} > /dev/null 2>&1
+
+MYNAME=${MYPRODUCT:-$MYNAME}
+${MYDIR}/make-version
+MYVERSION=$(cat ${ROOTDIR}/GIT-VERSION-FILE | cut -d ' ' -f 3)
+MYVERSION=${MYVERSION:-unknown}
+MYTARBALLNAME=${MYNAME}-${MYVERSION}
+echo Creating tarball for ${MYNAME} ${MYVERSION}...
+tarball_create &&
+${COMPR_BIN} ${MYDIR}/${MYTARBALLNAME}.tar && mv ${MYDIR}/${MYTARBALLNAME}.tar.${COMPR_EXT} ${ROOTDIR} || echo No se ha podido crear ${MYTARBALLNAME}.tar.${COMPR_EXT} 1>&2
+rm -rf ${MYTARBALLNAME} ${ROOTDIR}/GIT-VERSION-FILE ${ROOTDIR}/src/version_data.h
+# Warning, other tools will parse the Version and Tarball lines.
+echo Version: ${MYVERSION}
+echo Tarball: ${MYTARBALLNAME}.tar.${COMPR_EXT}
+popd > /dev/null 2>&1

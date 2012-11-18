@@ -1,0 +1,33 @@
+#/bin/bash
+#
+# Tags the currently checked out commit as a version with an optional codename
+#
+
+set -e
+
+MYDIR="$(dirname $0)"
+ROOTDIR="${MYDIR}/.."
+
+GVG="${MYDIR}/git-version-gen"
+VERSION="$1"
+CODENAME="$2"
+
+if test "x${VERSION}" = "x"; then
+	echo "Usage: $(basename $0) <version-number> [<codename>]" >&2
+	exit 1
+fi
+
+if git tag -l -n99 | grep -P "^v${VERSION}\s+" > /dev/null 2>&1; then
+	echo "Version ${VERSION} already exists" >&2
+	exit 2
+fi
+
+sed -i -e "s/^DEF_VER=.*$/DEF_VER=v${VERSION}.GIT/" ${GVG}
+git add ${GVG}
+git commit -s -m "Release ${VERSION}"
+git tag -a v${VERSION} -m "temp tag; if you find this, it's a lost tag from make-release, delete it"
+${MYDIR}/make-changelog v${VERSION}
+git tag -d v${VERSION}
+git add ${ROOTDIR}/ChangeLog
+git log -n 1 --format=format:%B | git commit --amend -F -
+git tag -a v${VERSION} -m "v${VERSION}" ${CODENAME+"-m Codename: $2"}
