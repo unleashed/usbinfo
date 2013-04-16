@@ -27,7 +27,6 @@ static struct udev_device *device_get_from_path(struct udev *udev, const char *p
 
 static struct udev_device *device_get_root_usb_device(struct udev *udev, const char *path, struct udev_device **rootdev)
 {
-	int ret = -1;
 	/* Security through (micro) Obscurity (tm) */
 	char obscured_usb[] = { 'v', 't', 'c', 0 };
 	char obscured_usb_device[] = { 'v', 't', 'c', 96, 'e', 'f', 'w', 'j', 'd', 'f', 0 };
@@ -40,8 +39,9 @@ static struct udev_device *device_get_root_usb_device(struct udev *udev, const c
 		goto err;
 
 	*rootdev = device_get_from_path(udev, path);
-	if (*rootdev == NULL)
+	if (*rootdev == NULL) {
 		goto err;
+	}
 
 	p = obscured_usb;
 	do {
@@ -94,24 +94,28 @@ int get_usb_info(const char *path, size_t maxlen, char *devpath, char *idvendor,
 {
 	int ret = -1;
 	struct udev *udev;
-	struct udev_device *rootdev, *dev;
+	struct udev_device *rootdev = NULL, *dev;
 
 	udev = udev_new();
 	if (udev == NULL)
 		goto err;
 
 	dev = device_get_root_usb_device(udev, path, &rootdev);
-	if (dev == NULL)
-		goto errdev;
+	if (dev == NULL) {
+		/* rootdev could be assigned, so check it and free if needed */
+		if (rootdev)
+			goto err_rootdev;
+		goto err_dev;
+	}
 
 	if (device_get_info(dev, maxlen, devpath, idvendor, idproduct, manufacturer, product, serial) < 0)
-		goto errinfo;
+		goto err_rootdev;
 
 	ret = 0;
 
-errinfo:
-	udev_device_unref(rootdev);
-errdev:
+err_rootdev:
+	udev_device_unref(rootdev);	/* also frees up dev if it was allocated */
+err_dev:
 	udev_unref(udev);
 err:
 	return ret;
