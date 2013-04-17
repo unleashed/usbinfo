@@ -24,7 +24,7 @@ fi
 
 sed -i -e "s/^DEF_VER=.*$/DEF_VER=v${VERSION}.GIT/" ${GVG}
 git add ${GVG}
-git commit -s -m "Release ${VERSION}"
+git commit -s -S -m "Release ${VERSION}"
 git tag -a v${VERSION} -m "temp tag; if you find this, it's a lost tag from make-release, delete it"
 ${MYDIR}/make-changelog v${VERSION}
 git tag -d v${VERSION}
